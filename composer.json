@@ -24,22 +24,22 @@
 
         "doctrine/doctrine-bundle": "~1.3",
         "friendsofsymfony/rest-bundle": "~1.5",
-        "jms/serializer-bundle": "~0.13",
+        "jms/serializer-bundle": "^1.1",
         "sylius/resource": "0.16.*",
         "sylius/storage": "0.16.*",
         "symfony/expression-language": "^2.7",
         "symfony/form": "^2.7",
         "symfony/framework-bundle": "^2.7.5",
         "symfony/twig-bundle": "^2.7",
+        "symfony/validator": "^2.7",
         "white-october/pagerfanta-bundle": "~1.0",
-        "willdurand/hateoas-bundle": "~0.4"
+        "willdurand/hateoas-bundle": "^1.0"
     },
     "require-dev": {
         "phpspec/phpspec": "~2.1",
         "akeneo/phpspec-skip-example-extension": "~1.2",
         "doctrine/mongodb-odm": "1.0.*@dev",
         "doctrine/orm": "~2.4",
-        "doctrine/phpcr-bundle": "~1.1",
         "sylius/rbac-bundle": "0.16.*",
         "sylius/translation-bundle": "0.16.*",
         "twig/twig": "~1.11"
