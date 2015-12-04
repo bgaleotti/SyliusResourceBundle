@@ -12,18 +12,18 @@
 namespace Sylius\Bundle\ResourceBundle\DependencyInjection;
 
 use Sylius\Bundle\ResourceBundle\DependencyInjection\Driver\DatabaseDriverFactory;
+use Sylius\Bundle\ResourceBundle\DependencyInjection\Extension\AbstractExtension;
+use Sylius\Bundle\TranslationBundle\DependencyInjection\Mapper;
 use Symfony\Component\Config\Definition\Processor;
-use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Loader\XmlFileLoader;
-use Symfony\Component\HttpKernel\DependencyInjection\Extension;
 
 /**
  * Resource system extension.
  *
  * @author Paweł Jędrzejewski <pjedrzejewski@sylius.pl>
+ * @author Gonzalo Vilaseca <gvilaseca@reiss.co.uk>
  */
-class SyliusResourceExtension extends Extension
+class SyliusResourceExtension extends AbstractExtension
 {
     /**
      * {@inheritdoc}
@@ -33,19 +33,29 @@ class SyliusResourceExtension extends Extension
         $processor = new Processor();
         $config    = $processor->processConfiguration(new Configuration(), $config);
 
-        $loader = new XmlFileLoader($container, new FileLocator(__DIR__.'/../Resources/config'));
-        $loader->load('services.xml');
-        $loader->load('twig.xml');
+        $this->loadServiceDefinitions($container, array(
+            'services.xml',
+            'storage.xml',
+            'routing.xml',
+            'twig.xml',
+        ));
 
         $classes = isset($config['resources']) ? $config['resources'] : array();
 
+        $container->setParameter('sylius.resource.settings', $config['settings']);
+
         $this->createResourceServices($classes, $container);
 
+        $configClasses = array('default' => $this->getClassesFromConfig($classes));
+
         if ($container->hasParameter('sylius.config.classes')) {
-            $classes = array_merge($classes, $container->getParameter('sylius.config.classes'));
+            $configClasses = array_merge_recursive(
+                $configClasses,
+                $container->getParameter('sylius.config.classes')
+            );
         }
 
-        $container->setParameter('sylius.config.classes', $classes);
+        $container->setParameter('sylius.config.classes', $configClasses);
     }
 
     /**
@@ -54,16 +64,51 @@ class SyliusResourceExtension extends Extension
      */
     private function createResourceServices(array $configs, ContainerBuilder $container)
     {
+        $translationsEnabled = class_exists('Sylius\Bundle\TranslationBundle\DependencyInjection\Mapper');
+
+        if ($translationsEnabled) {
+            $mapper = new Mapper();
+        }
+
         foreach ($configs as $name => $config) {
             list($prefix, $resourceName) = explode('.', $name);
+            $manager = isset($config['object_manager']) ? $config['object_manager'] : 'default';
 
             DatabaseDriverFactory::get(
-                $config['driver'],
                 $container,
                 $prefix,
                 $resourceName,
+                $manager,
+                $config['driver'],
                 array_key_exists('templates', $config) ? $config['templates'] : null
             )->load($config['classes']);
+
+            if ($translationsEnabled && array_key_exists('model', $config['classes']) && array_key_exists('translation', $config['classes'])) {
+                $mapper->mapTranslations($config['classes'], $container);
+
+                DatabaseDriverFactory::get(
+                    $container,
+                    $prefix,
+                    sprintf('%s_translation', $resourceName),
+                    $manager,
+                    $config['driver']
+                )->load($config['classes']['translation']);
+            }
         }
+    }
+
+    /**
+     * @param array $configs
+     * @return array
+     */
+    private function getClassesFromConfig($configs)
+    {
+        $classes = array();
+
+        foreach ($configs as $config) {
+            $classes[] = $config['classes'];
+        }
+
+        return $classes;
     }
 }

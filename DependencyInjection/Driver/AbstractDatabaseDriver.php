@@ -11,9 +11,11 @@
 
 namespace Sylius\Bundle\ResourceBundle\DependencyInjection\Driver;
 
+use Sylius\Component\Resource\Factory\Factory;
 use Symfony\Component\DependencyInjection\Alias;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Parameter;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
@@ -35,6 +37,11 @@ abstract class AbstractDatabaseDriver implements DatabaseDriverInterface
     /**
      * @var string
      */
+    protected $managerName;
+
+    /**
+     * @var string
+     */
     protected $resourceName;
 
     /**
@@ -42,25 +49,49 @@ abstract class AbstractDatabaseDriver implements DatabaseDriverInterface
      */
     protected $templates;
 
-    public function __construct(ContainerBuilder $container, $prefix, $resourceName, $templates = null)
+    public function __construct(ContainerBuilder $container, $prefix, $resourceName, $managerName, $templates = null)
     {
         $this->container = $container;
         $this->prefix = $prefix;
         $this->resourceName = $resourceName;
+        $this->managerName = $managerName;
         $this->templates = $templates;
     }
 
     public function load(array $classes)
     {
-        $this->container->setDefinition(
-            $this->getContainerKey('controller'),
-            $this->getControllerDefinition($classes['controller'])
-        );
+        if (isset($classes['controller'])) {
+            $this->container->setDefinition(
+                $this->getContainerKey('controller'),
+                $this->getControllerDefinition($classes['controller'])
+            );
+        }
+
+        $repositoryDefinition = $this->getRepositoryDefinition($classes);
+        $reflection = new \ReflectionClass($repositoryDefinition->getClass());
+
+        $translatableRepositoryInterface = 'Sylius\Component\Translation\Repository\TranslatableResourceRepositoryInterface';
+
+        if (interface_exists($translatableRepositoryInterface) && $reflection->implementsInterface($translatableRepositoryInterface)) {
+            if (isset($classes['translation']['mapping']['fields'])) {
+                $repositoryDefinition->addMethodCall('setTranslatableFields', array($classes['translation']['mapping']['fields']));
+            }
+        }
 
         $this->container->setDefinition(
             $this->getContainerKey('repository'),
-            $this->getRepositoryDefinition($classes)
+            $repositoryDefinition
         );
+
+
+        if (isset($classes['factory'])) {
+            $factoryDefinition = $this->getFactoryDefinition($classes['factory'], $classes['model']);
+
+            $this->container->setDefinition(
+                $this->getContainerKey('factory'),
+                $factoryDefinition
+            );
+        }
 
         $this->setManagerAlias();
     }
@@ -93,7 +124,7 @@ abstract class AbstractDatabaseDriver implements DatabaseDriverInterface
      */
     protected function getConfigurationDefinition()
     {
-        $definition = new Definition('Sylius\Bundle\ResourceBundle\Controller\Configuration');
+        $definition = new Definition(new Parameter('sylius.controller.configuration.class'));
         $definition
             ->setFactoryService('sylius.controller.configuration_factory')
             ->setFactoryMethod('createConfiguration')
@@ -116,6 +147,34 @@ abstract class AbstractDatabaseDriver implements DatabaseDriverInterface
             ->setArguments(array($this->getConfigurationDefinition()))
             ->addMethodCall('setContainer', array(new Reference('service_container')))
         ;
+
+        return $definition;
+    }
+
+    /**
+     * @param $factoryClass
+     * @param $modelClass
+     *
+     * @return Definition
+     */
+    protected function getFactoryDefinition($factoryClass, $modelClass)
+    {
+        $translatableFactoryInterface = 'Sylius\Component\Translation\Factory\TranslatableFactoryInterface';
+
+        $reflection = new \ReflectionClass($factoryClass);
+
+        $definition = new Definition($factoryClass);
+
+        if (interface_exists($translatableFactoryInterface) && $reflection->implementsInterface($translatableFactoryInterface)) {
+            $decoratedDefinition = new Definition(Factory::class);
+            $decoratedDefinition->setArguments(array($modelClass));
+
+            $definition->setArguments(array($decoratedDefinition, new Reference('sylius.translation.locale_provider')));
+
+            return $definition;
+        }
+
+        $definition->setArguments(array($modelClass));
 
         return $definition;
     }

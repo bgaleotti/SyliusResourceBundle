@@ -15,12 +15,13 @@ use Doctrine\ODM\PHPCR\DocumentRepository as BaseDocumentRepository;
 use Doctrine\ODM\PHPCR\Query\Builder\QueryBuilder;
 use Pagerfanta\Adapter\DoctrineODMPhpcrAdapter;
 use Pagerfanta\Pagerfanta;
+use Sylius\Component\Resource\Model\ResourceInterface;
 use Sylius\Component\Resource\Repository\RepositoryInterface;
 
 /**
  * Doctrine PHPCR-ODM driver document repository.
  *
- * @author Paweł Jędrzejewski <pjedrzejewski@diweb.pl>
+ * @author Paweł Jędrzejewski <pawel@sylius.org>
  * @author David Buchmann <mail@davidbu.ch>
  */
 class DocumentRepository extends BaseDocumentRepository implements RepositoryInterface
@@ -28,24 +29,34 @@ class DocumentRepository extends BaseDocumentRepository implements RepositoryInt
     /**
      * {@inheritdoc}
      */
-    public function createNew()
+    public function createPaginator(array $criteria = array(), array $sorting = array())
     {
-        $className = $this->getClassName();
+        $queryBuilder = $this->getCollectionQueryBuilder();
 
-        return new $className;
+        $this->applyCriteria($queryBuilder, $criteria);
+        $this->applySorting($queryBuilder, $sorting);
+
+        return $this->getPaginator($queryBuilder);
     }
 
     /**
      * {@inheritdoc}
      */
-    public function createPaginator(array $criteria = null, array $orderBy = null)
+    public function add(ResourceInterface $resource)
     {
-        $queryBuilder = $this->getCollectionQueryBuilder();
+        $this->dm->persist($resource);
+        $this->dm->flush();
+    }
 
-        $this->applyCriteria($queryBuilder, $criteria);
-        $this->applySorting($queryBuilder, $orderBy);
-
-        return $this->getPaginator($queryBuilder);
+    /**
+     * {@inheritdoc}
+     */
+    public function remove(ResourceInterface $resource)
+    {
+        if (null !== $this->find($resource->getId())) {
+            $this->dm->remove($resource);
+            $this->dm->flush();
+        }
     }
 
     /**
@@ -68,36 +79,27 @@ class DocumentRepository extends BaseDocumentRepository implements RepositoryInt
 
     /**
      * @param QueryBuilder $queryBuilder
-     *
-     * @param array $criteria
+     * @param array        $criteria
      */
-    protected function applyCriteria(QueryBuilder $queryBuilder, array $criteria = null)
+    protected function applyCriteria(QueryBuilder $queryBuilder, array $criteria = array())
     {
-        if (null === $criteria) {
-            return;
-        }
-
         foreach ($criteria as $property => $value) {
             if (!empty($value)) {
                 $queryBuilder
-                    ->andWhere($this->getPropertyName($property).' = :'.$property)
-                    ->setParameter($property, $value)
-                ;
+                    ->andWhere()
+                        ->eq()
+                            ->field($this->getPropertyName($property))
+                            ->literal($value);
             }
         }
     }
 
     /**
      * @param QueryBuilder $queryBuilder
-     *
-     * @param array $sorting
+     * @param array        $sorting
      */
-    protected function applySorting(QueryBuilder $queryBuilder, array $sorting = null)
+    protected function applySorting(QueryBuilder $queryBuilder, array $sorting = array())
     {
-        if (null === $sorting) {
-            return;
-        }
-
         foreach ($sorting as $property => $order) {
             if (!empty($order)) {
                 $queryBuilder->orderBy()->{$order}()->field('o.'.$property);
@@ -121,6 +123,9 @@ class DocumentRepository extends BaseDocumentRepository implements RepositoryInt
         return $name;
     }
 
+    /**
+     * @return string
+     */
     protected function getAlias()
     {
         return 'o';

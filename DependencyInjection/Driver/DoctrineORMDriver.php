@@ -13,11 +13,13 @@ namespace Sylius\Bundle\ResourceBundle\DependencyInjection\Driver;
 
 use Sylius\Bundle\ResourceBundle\SyliusResourceBundle;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Parameter;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * @author Paweł Jędrzejewski <pawel@sylius.org>
  * @author Arnaud Langlade <aRn0D.dev@gmail.com>
+ * @author Gonzalo Vilaseca <gvilaseca@reiss.co.uk>
  */
 class DoctrineORMDriver extends AbstractDatabaseDriver
 {
@@ -34,8 +36,14 @@ class DoctrineORMDriver extends AbstractDatabaseDriver
      */
     protected function getRepositoryDefinition(array $classes)
     {
+        $reflection = new \ReflectionClass($classes['model']);
+        $translatableInterface = 'Sylius\Component\Translation\Model\TranslatableInterface';
+        $translatable = (interface_exists($translatableInterface) && $reflection->implementsInterface($translatableInterface));
+
         $repositoryKey = $this->getContainerKey('repository', '.class');
-        $repositoryClass = 'Sylius\Bundle\ResourceBundle\Doctrine\ORM\EntityRepository';
+        $repositoryClass = $translatable
+            ? 'Sylius\Bundle\TranslationBundle\Doctrine\ORM\TranslatableResourceRepository'
+            : new Parameter('sylius.orm.repository.class');
 
         if ($this->container->hasParameter($repositoryKey)) {
             $repositoryClass = $this->container->getParameter($repositoryKey);
@@ -48,7 +56,7 @@ class DoctrineORMDriver extends AbstractDatabaseDriver
         $definition = new Definition($repositoryClass);
         $definition->setArguments(array(
             new Reference($this->getContainerKey('manager')),
-            $this->getClassMetadataDefinition($classes['model'])
+            $this->getClassMetadataDefinition($classes['model']),
         ));
 
         return $definition;
@@ -59,7 +67,7 @@ class DoctrineORMDriver extends AbstractDatabaseDriver
      */
     protected function getManagerServiceKey()
     {
-        return 'doctrine.orm.entity_manager';
+        return sprintf('doctrine.orm.%s_entity_manager', $this->managerName);
     }
 
     /**
